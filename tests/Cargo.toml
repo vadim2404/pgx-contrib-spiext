@@ -13,15 +13,14 @@ pg11 = ["pgx/pg11", "pgx-tests/pg11", "pgx-contrib-spiext/pg11"]
 pg12 = ["pgx/pg12", "pgx-tests/pg12", "pgx-contrib-spiext/pg12"]
 pg13 = ["pgx/pg13", "pgx-tests/pg13", "pgx-contrib-spiext/pg13"]
 pg14 = ["pgx/pg14", "pgx-tests/pg14", "pgx-contrib-spiext/pg14"]
-pg_test = ["debugless-unwrap"]
+pg_test = []
 
 [dependencies]
-pgx = "=0.5.0"
+pgx = "=0.5.3"
 pgx-contrib-spiext = { path = "..", features = ["pub_catch_error"] }
-debugless-unwrap = { version = "0.0.4", optional = true }
 
 [dev-dependencies]
-pgx-tests = "=0.5.0"
+pgx-tests = "=0.5.3"
 
 [profile.dev]
 panic = "unwind"

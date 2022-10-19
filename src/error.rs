@@ -5,6 +5,7 @@ use std::any::Any;
 use std::panic::resume_unwind;
 
 /// Postrgres or Rust-originating error
+#[derive(Debug)]
 pub enum Error {
     /// Postgres-originating error
     PG(PostgresError),
@@ -25,6 +26,7 @@ impl Error {
 }
 
 /// Postgres-originating error
+#[derive(Debug)]
 pub struct PostgresError {
     pub elevel: PgLogLevel,
     pub output_to_server: bool,
