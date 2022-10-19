@@ -2,6 +2,7 @@ use pgx::cstr_core::CStr;
 use pgx::log::PgLogLevel;
 use pgx::{pg_sys, PgMemoryContexts};
 use std::any::Any;
+use std::panic::resume_unwind;
 
 /// Postrgres or Rust-originating error
 pub enum Error {
@@ -9,6 +10,18 @@ pub enum Error {
     PG(PostgresError),
     /// Rust-originating error
     Rust(Box<dyn Any + Send + 'static>),
+}
+
+impl Error {
+    /// Returns [`PostgresError`] if `Error` is `Error::PG`,  propagates Rust's panic otherwise.
+    pub fn into_postgres_error(self) -> PostgresError {
+        match self {
+            Error::PG(err) => err,
+            Error::Rust(err) => {
+                resume_unwind(err);
+            }
+        }
+    }
 }
 
 /// Postgres-originating error

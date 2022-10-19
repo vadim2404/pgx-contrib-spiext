@@ -5,7 +5,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use crate::catch_error::*;
 use crate::subtxn::*;
 
-use crate::error::Error;
+use crate::error::{Error, PostgresError};
 
 /// Read-only commands for SPI interface
 pub trait CheckedCommands {
@@ -17,7 +17,7 @@ pub trait CheckedCommands {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error>;
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError>;
 }
 
 /// Mutable commands for SPI interface
@@ -30,7 +30,7 @@ pub trait CheckedMutCommands {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error>;
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError>;
 }
 
 impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedCommands
@@ -43,8 +43,9 @@ impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedComm
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         catch_error(self, |xact| (xact.select(query, limit, args), xact))
+            .map_err(Error::into_postgres_error)
     }
 }
 
@@ -58,8 +59,9 @@ impl<Parent: DerefMut<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedM
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         catch_error(self, |mut xact| (xact.update(query, limit, args), xact))
+            .map_err(Error::into_postgres_error)
     }
 }
 
@@ -71,7 +73,7 @@ impl CheckedCommands for SpiClient {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         self.sub_transaction(|xact| xact.checked_select(query, limit, args))
             .map(|(table, xact)| (table, xact.commit().into_inner()))
     }
@@ -85,7 +87,7 @@ impl<'a> CheckedCommands for &'a SpiClient {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         // Here we rely on the fact that `SpiClient` can be created at any time. This may not hold true in the future
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient
@@ -102,7 +104,7 @@ impl CheckedMutCommands for SpiClient {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         self.sub_transaction(|xact| xact.checked_update(query, limit, args))
             .map(|(table, xact)| (table, xact.commit().into_inner()))
     }
@@ -116,7 +118,7 @@ impl<'a> CheckedMutCommands for &'a mut SpiClient {
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, Error> {
+    ) -> Result<Self::Result<SpiTupleTable>, PostgresError> {
         // Here we rely on the fact that `SpiClient` can be created at any time. This may not hold true in the future
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient

@@ -9,6 +9,7 @@ mod tests {
     use pgx::prelude::*;
     use pgx_contrib_spiext::error::*;
     use pgx_contrib_spiext::*;
+    use std::panic::catch_unwind;
 
     #[pg_test]
     fn test_sub_txn() {
@@ -63,6 +64,30 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_into_postgres_error_propagates_rust_error() {
+        use catch_error::catch_error;
+        use std::any::Any;
+        use subtxn::*;
+        #[allow(unused_variables)]
+        Spi::execute(|c| {
+            let result: Result<_, Box<dyn Any + Send>> = catch_unwind(|| {
+                let _ = c.sub_transaction(|xact| {
+                    catch_error(xact, |xact| {
+                        panic!("error");
+                        #[allow(unreachable_code)]
+                        ((), xact)
+                    })
+                    .map_err(Error::into_postgres_error)
+                });
+            });
+            assert!(matches!(
+                result.debugless_unwrap_err().downcast_ref::<&str>(),
+                Some(&s) if s == "error"
+            ));
+        });
+    }
+
+    #[pg_test]
     fn test_catch_checked_select() {
         use checked::*;
         Spi::execute(|c| {
@@ -73,7 +98,7 @@ mod tests {
             let result = c.checked_select("SLECT 1", None, None);
             assert!(matches!(
                 result.debugless_unwrap_err(),
-                 Error::PG(PostgresError{ message: Some(message), ..}) if message == "syntax error at or near \"SLECT\""
+                 PostgresError{ message: Some(message), ..} if message == "syntax error at or near \"SLECT\""
             ));
         });
     }
@@ -91,7 +116,7 @@ mod tests {
             let result = c.checked_update("CREAT TABLE x()", None, None);
             assert!(matches!(
                 result.debugless_unwrap_err(),
-                Error::PG(PostgresError{ message: Some(message), ..}) if message == "syntax error at or near \"CREAT\""
+                PostgresError{ message: Some(message), ..} if message == "syntax error at or near \"CREAT\""
             ));
         });
     }
@@ -106,7 +131,7 @@ mod tests {
                 let result = xact.checked_select("SLECT 1", None, None);
                 assert!(matches!(
                     result.debugless_unwrap_err(),
-                    Error::PG(PostgresError{ message: Some(message), ..}) if message == "syntax error at or near \"SLECT\""
+                    PostgresError{ message: Some(message), ..} if message == "syntax error at or near \"SLECT\""
                 ));
             });
         });
@@ -124,7 +149,7 @@ mod tests {
                 let result = xact.checked_update("INSER INTO a VALUES ()", None, None);
                 assert!(matches!(
                     result.debugless_unwrap_err(),
-                    Error::PG(PostgresError{ message: Some(message), ..}) if message == "syntax error at or near \"INSER\""
+                    PostgresError{ message: Some(message), ..} if message == "syntax error at or near \"INSER\""
                 ));
             });
         });

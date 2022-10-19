@@ -16,6 +16,6 @@ pub mod subtxn;
 
 pub mod prelude {
     pub use crate::checked::*;
-    pub use crate::error::*;
+    pub use crate::error::PostgresError;
     pub use crate::subtxn::*;
 }
