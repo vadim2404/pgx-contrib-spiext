@@ -20,7 +20,7 @@ facilities.
 ### Checked Commands
 
 Checked commands allow to run a SQL comamnd (a query or an update), capturing an error that may have occurred. Pgx
-currently does not allow easy access to it. This feature is using PG_CATCH-like approach used in cases where scuh
+currently does not allow easy access to it. This feature is using PG_CATCH-like approach used in cases where such
 capture is
 necessary.
 
