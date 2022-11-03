@@ -10,13 +10,13 @@ msrv = "1.65"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pgx = "0.5.3"
+pgx = { version = "0.5.6", git = "https://github.com/tcdi/pgx", rev = "bfe87cf" }
 
 [features]
 default = []
 pub_catch_error = []
-pg10 = ["pgx/pg10"]
 pg11 = ["pgx/pg11"]
 pg12 = ["pgx/pg12"]
 pg13 = ["pgx/pg13"]
 pg14 = ["pgx/pg14"]
+pg15 = ["pgx/pg15"]

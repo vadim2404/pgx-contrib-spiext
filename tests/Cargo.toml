@@ -8,19 +8,19 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["pg13"]
-pg10 = ["pgx/pg10", "pgx-tests/pg10", "pgx-contrib-spiext/pg10" ]
 pg11 = ["pgx/pg11", "pgx-tests/pg11", "pgx-contrib-spiext/pg11"]
 pg12 = ["pgx/pg12", "pgx-tests/pg12", "pgx-contrib-spiext/pg12"]
 pg13 = ["pgx/pg13", "pgx-tests/pg13", "pgx-contrib-spiext/pg13"]
 pg14 = ["pgx/pg14", "pgx-tests/pg14", "pgx-contrib-spiext/pg14"]
+pg15 = ["pgx/pg15", "pgx-tests/pg15", "pgx-contrib-spiext/pg15"]
 pg_test = []
 
 [dependencies]
-pgx = "=0.5.3"
+pgx = { version = "0.5.6", git = "https://github.com/tcdi/pgx", rev = "bfe87cf" }
 pgx-contrib-spiext = { path = "..", features = ["pub_catch_error"] }
 
 [dev-dependencies]
-pgx-tests = "=0.5.3"
+pgx-tests = { version = "0.5.6", git = "https://github.com/tcdi/pgx", rev = "bfe87cf" }
 
 [profile.dev]
 panic = "unwind"
