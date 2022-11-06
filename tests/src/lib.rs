@@ -104,9 +104,16 @@ mod tests {
     fn test_catch_checked_update() {
         use checked::*;
         Spi::execute(|mut c| {
+            let txid = unsafe { pg_sys::GetCurrentSubTransactionId() };
             let _ = (&mut c)
                 .checked_update("CREATE TABLE x ()", None, None)
                 .unwrap();
+            // Ensure we're no longer in the a sub-transaction created by `checked_update`
+            let txid_ = unsafe { pg_sys::GetCurrentSubTransactionId() };
+            assert!(txid == txid_);
+            assert!((&c)
+                .checked_select("SELECT count(*) FROM x", None, None)
+                .is_ok());
             let (_, c) = c.checked_update("CREATE TABLE a ()", None, None).unwrap();
             let result = c.checked_update("CREAT TABLE x()", None, None);
             assert!(matches!(

@@ -14,14 +14,15 @@ impl<Parent> SubTransaction<Parent> {
     /// Internal hack to keep a reference to the transaction that goes
     /// into the closure passed to `catch_error` in case if we need to roll it back.
     fn internal_clone(&mut self) -> SubTransaction<()> {
-        // Don't drop drop the original (= commit) it while it's being used so that
+        // Don't drop the original subtxn (equates to committing it) it while it's being used so that
         // we can roll it back. Very important!
+        let drop = self.drop;
         self.drop = false;
         SubTransaction {
             memory_context: self.memory_context,
             resource_owner: self.resource_owner,
             // Save original transation's `drop` flag
-            drop: self.drop,
+            drop,
             parent: Some(()),
         }
     }
@@ -52,7 +53,8 @@ where
         Ok((result, mut xact)) => {
             // Restore original transaction's `drop` flag
             xact.drop = subtxn_.drop;
-            // Ensure we'll NOT drop (= commit) the intrenal clone. Also very important!
+
+            // Ensure we'll NOT drop (meaning commit) the internal clone. Also very important!
             subtxn_.drop = false;
             Ok((result, xact))
         }
