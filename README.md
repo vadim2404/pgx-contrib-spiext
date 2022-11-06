@@ -4,7 +4,7 @@
 
 ## MSRV
 
-Rust 1.65 (currently in beta, due to be released in November 2022) due to its use of GAT.
+Rust 1.65 due to this crate's use of GAT.
 
 ## Running tests
 
