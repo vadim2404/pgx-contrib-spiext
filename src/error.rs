@@ -31,7 +31,7 @@ pub struct PostgresError {
     pub elevel: PgLogLevel,
     pub output_to_server: bool,
     pub output_to_client: bool,
-    #[cfg(not(feature = "pg14"))]
+    #[cfg(any(feature = "pg11", feature = "pg12", feature = "pg13"))]
     pub show_funcname: bool,
     pub hide_stmt: bool,
     pub hide_ctx: bool,
@@ -91,7 +91,7 @@ impl<'a> From<&'a pg_sys::ErrorData> for PostgresError {
             elevel,
             output_to_server: error.output_to_server,
             output_to_client: error.output_to_client,
-            #[cfg(not(feature = "pg14"))]
+            #[cfg(any(feature = "pg11", feature = "pg12", feature = "pg13"))]
             show_funcname: error.show_funcname,
             hide_stmt: error.hide_stmt,
             hide_ctx: error.hide_ctx,
