@@ -11,11 +11,9 @@ pub mod catch_error;
 #[cfg(not(feature = "pub_catch_error"))]
 pub(crate) mod catch_error;
 pub mod checked;
-pub mod error;
 pub mod subtxn;
 
 pub mod prelude {
     pub use crate::checked::*;
-    pub use crate::error::PostgresError;
     pub use crate::subtxn::*;
 }
