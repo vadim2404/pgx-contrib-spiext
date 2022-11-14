@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 /// Sub-transaction
 ///
-/// Unless rolled back or committed explicitly, it'll commit when it's dropped.
+/// Unless rolled back or committed explicitly, it'll roll back when it's dropped.
 pub struct SubTransaction<Parent> {
     memory_context: pg_sys::MemoryContext,
     resource_owner: pg_sys::ResourceOwner,
