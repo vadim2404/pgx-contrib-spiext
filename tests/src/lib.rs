@@ -7,6 +7,7 @@ pgx::pg_module_magic!();
 mod tests {
     use pgx::pg_sys::submodules::panic::CaughtError;
     use pgx::prelude::*;
+    use pgx::SpiClient;
     use pgx_contrib_spiext::*;
 
     #[pg_test]
@@ -44,6 +45,41 @@ mod tests {
                     .unwrap()
             );
         })
+    }
+
+    #[pg_test]
+    fn test_subtxn_checked_execution_smoketest() {
+        use subtxn::*;
+        Spi::execute(|mut c| {
+            c.update("CREATE TABLE a (v INTEGER)", None, None);
+            dbg!();
+            c.sub_transaction(|mut xact| {
+                xact.update("INSERT INTO a VALUES (0)", None, None);
+            });
+            // The above transaction will be rolled back
+            assert_eq!(
+                0,
+                SpiClient
+                    .select("SELECT COUNT(*) FROM a", Some(1), None)
+                    .first()
+                    .get_datum::<i32>(1)
+                    .unwrap()
+            );
+            // We use SpiClient here because `c` was consumed. It's not the best way to
+            // handle this, but we needed to simulate dropping the sub-transaction
+            let c = SpiClient.sub_transaction(|mut xact| {
+                xact.update("INSERT INTO a VALUES (0)", None, None);
+                xact.commit()
+            });
+            // The above transaction will be committed back (as explicitly requested)
+            assert_eq!(
+                1,
+                c.select("SELECT COUNT(*) FROM a", Some(1), None)
+                    .first()
+                    .get_datum::<i32>(1)
+                    .unwrap()
+            );
+        });
     }
 
     #[pg_test]
