@@ -127,10 +127,7 @@ impl<'a> CheckedCommands for &'a SpiClient {
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient
             .sub_transaction(|xact| xact.checked_select(query, limit, args))
-            .map(|(table, xact)| {
-                xact.commit();
-                table
-            })
+            .map(|(table, _xact): (_, SubTransaction<_, true>)| table)
     }
 }
 
@@ -161,9 +158,6 @@ impl<'a> CheckedMutCommands for &'a mut SpiClient {
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient
             .sub_transaction(|xact| xact.checked_update(query, limit, args))
-            .map(|(table, xact)| {
-                xact.commit();
-                table
-            })
+            .map(|(table, _xact): (_, SubTransaction<_, true>)| table)
     }
 }
