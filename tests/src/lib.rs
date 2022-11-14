@@ -49,29 +49,31 @@ mod tests {
 
     #[pg_test]
     fn test_subtxn_checked_execution_smoketest() {
+        use checked::*;
         use subtxn::*;
         Spi::execute(|mut c| {
             c.update("CREATE TABLE a (v INTEGER)", None, None);
-            dbg!();
-            c.sub_transaction(|mut xact| {
-                xact.update("INSERT INTO a VALUES (0)", None, None);
-            });
-            // The above transaction will be rolled back
+            let (_, c) = c
+                .sub_transaction(|xact| xact.checked_update("INSERT INTO a VALUES (0)", None, None))
+                .unwrap();
+            drop(c);
+            // The above transaction will be committed
+
+            // We use SpiClient here because `c` was consumed. It's not the best way to
+            // handle this, but we needed to simulate dropping the sub-transaction
             assert_eq!(
-                0,
+                1,
                 SpiClient
                     .select("SELECT COUNT(*) FROM a", Some(1), None)
                     .first()
                     .get_datum::<i32>(1)
                     .unwrap()
             );
-            // We use SpiClient here because `c` was consumed. It's not the best way to
-            // handle this, but we needed to simulate dropping the sub-transaction
             let c = SpiClient.sub_transaction(|mut xact| {
                 xact.update("INSERT INTO a VALUES (0)", None, None);
-                xact.commit()
+                xact.rollback()
             });
-            // The above transaction will be committed back (as explicitly requested)
+            // The above transaction will be rolled back (as explicitly requested)
             assert_eq!(
                 1,
                 c.select("SELECT COUNT(*) FROM a", Some(1), None)
