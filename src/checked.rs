@@ -1,9 +1,9 @@
 use pgx::pg_sys::panic::CaughtError;
+use pgx::PgTryBuilder;
 use pgx::{pg_sys::Datum, PgOid, SpiClient, SpiTupleTable};
 use std::ops::{Deref, DerefMut};
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
-use crate::catch_error::*;
 use crate::subtxn::*;
 
 /// Read-only commands for SPI interface
@@ -43,7 +43,9 @@ impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedComm
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
-        catch_error(self, |xact| (xact.select(query, limit, args), xact))
+        PgTryBuilder::new(move || Ok((self.select(query, limit, args), self)))
+            .catch_others(|e| Err(e))
+            .execute()
     }
 }
 
@@ -53,12 +55,14 @@ impl<Parent: DerefMut<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedM
     type Result<A> = (A, SubTransaction<Parent>);
 
     fn checked_update(
-        self,
+        mut self,
         query: &str,
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
-        catch_error(self, |mut xact| (xact.update(query, limit, args), xact))
+        PgTryBuilder::new(move || Ok((self.update(query, limit, args), self)))
+            .catch_others(|e| Err(e))
+            .execute()
     }
 }
 
@@ -89,7 +93,10 @@ impl<'a> CheckedCommands for &'a SpiClient {
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient
             .sub_transaction(|xact| xact.checked_select(query, limit, args))
-            .map(|(table, _xact)| table)
+            .map(|(table, xact)| {
+                xact.commit();
+                table
+            })
     }
 }
 
@@ -120,6 +127,9 @@ impl<'a> CheckedMutCommands for &'a mut SpiClient {
         // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
         SpiClient
             .sub_transaction(|xact| xact.checked_update(query, limit, args))
-            .map(|(table, _xact)| table)
+            .map(|(table, xact)| {
+                xact.commit();
+                table
+            })
     }
 }

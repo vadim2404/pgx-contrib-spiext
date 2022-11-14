@@ -47,21 +47,6 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_catch_pg_error() {
-        use catch_error::catch_error;
-        use subtxn::*;
-        Spi::execute(|c| {
-            let result = c.sub_transaction(|xact| {
-                catch_error(xact, |xact| (xact.select("SLECT 1", None, None), xact))
-            });
-            assert!(matches!(
-                result.unwrap_err(),
-                CaughtError::PostgresError(error) if error.message() == "syntax error at or near \"SLECT\""
-            ));
-        });
-    }
-
-    #[pg_test]
     fn test_catch_checked_select() {
         use checked::*;
         Spi::execute(|c| {

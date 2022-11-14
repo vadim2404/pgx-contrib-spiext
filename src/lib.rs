@@ -6,10 +6,6 @@
 //! use pgx_contrib_spiext::prelude::*;
 //! ```
 
-#[cfg(feature = "pub_catch_error")]
-pub mod catch_error;
-#[cfg(not(feature = "pub_catch_error"))]
-pub(crate) mod catch_error;
 pub mod checked;
 pub mod subtxn;
 

@@ -6,10 +6,12 @@ use std::ops::{Deref, DerefMut};
 ///
 /// Unless rolled back or committed explicitly, it'll commit when it's dropped.
 pub struct SubTransaction<Parent> {
-    pub(crate) memory_context: pg_sys::MemoryContext,
-    pub(crate) resource_owner: pg_sys::ResourceOwner,
-    pub(crate) drop: bool,
-    pub(crate) parent: Option<Parent>,
+    memory_context: pg_sys::MemoryContext,
+    resource_owner: pg_sys::ResourceOwner,
+    // Should the the transaction be dropped, or was it already
+    // committed or rolled back? True if it should be dropped.
+    drop: bool,
+    parent: Option<Parent>,
 }
 
 impl<Parent> Debug for SubTransaction<Parent> {
@@ -43,18 +45,18 @@ impl<Parent> SubTransaction<Parent> {
 
     /// Commit the transaction, returning its parent
     pub fn commit(mut self) -> Parent {
-        self.internal_commit();
+        unsafe {
+            pg_sys::ReleaseCurrentSubTransaction();
+            pg_sys::CurrentResourceOwner = self.resource_owner;
+        }
+        PgMemoryContexts::For(self.memory_context).set_as_current();
         self.drop = false;
         self.parent.take().unwrap()
     }
 
     /// Rollback the transaction, returning its parent
     pub fn rollback(mut self) -> Parent {
-        unsafe {
-            pg_sys::RollbackAndReleaseCurrentSubTransaction();
-            pg_sys::CurrentResourceOwner = self.resource_owner;
-        }
-        PgMemoryContexts::For(self.memory_context).set_as_current();
+        self.internal_rollback();
         self.drop = false;
         self.parent.take().unwrap()
     }
@@ -64,9 +66,9 @@ impl<Parent> SubTransaction<Parent> {
         PgMemoryContexts::For(self.memory_context)
     }
 
-    fn internal_commit(&self) {
+    fn internal_rollback(&self) {
         unsafe {
-            pg_sys::ReleaseCurrentSubTransaction();
+            pg_sys::RollbackAndReleaseCurrentSubTransaction();
             pg_sys::CurrentResourceOwner = self.resource_owner;
         }
         PgMemoryContexts::For(self.memory_context).set_as_current();
@@ -75,9 +77,9 @@ impl<Parent> SubTransaction<Parent> {
 
 impl<Parent> Drop for SubTransaction<Parent> {
     fn drop(&mut self) {
-        // If we still need to commit, commit:
+        // If we still need to roll back, roll it back:
         if self.drop {
-            self.internal_commit();
+            self.internal_rollback();
         }
     }
 }
