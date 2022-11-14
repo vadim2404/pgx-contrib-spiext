@@ -1,6 +1,5 @@
 use pgx::{pg_sys, PgMemoryContexts, SpiClient};
 use std::fmt::{Debug, Formatter};
-use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
 /// Sub-transaction
@@ -96,28 +95,30 @@ impl<Parent> SubTransaction<Parent, false> {
 }
 
 impl<Parent> Into<SubTransaction<Parent, false>> for SubTransaction<Parent, true> {
-    fn into(self) -> SubTransaction<Parent, false> {
-        // Don't drop the original sub-xact
-        let mut xact = ManuallyDrop::new(self);
-        SubTransaction {
-            memory_context: xact.memory_context,
-            resource_owner: xact.resource_owner,
-            drop: xact.drop,
-            parent: xact.parent.take(),
-        }
+    fn into(mut self) -> SubTransaction<Parent, false> {
+        let result = SubTransaction {
+            memory_context: self.memory_context,
+            resource_owner: self.resource_owner,
+            drop: self.drop,
+            parent: self.parent.take(),
+        };
+        // Make sure original sub-transaction won't commit
+        self.drop = false;
+        result
     }
 }
 
 impl<Parent> Into<SubTransaction<Parent, true>> for SubTransaction<Parent, false> {
-    fn into(self) -> SubTransaction<Parent, true> {
-        // Don't drop the original sub-xact
-        let mut xact = ManuallyDrop::new(self);
-        SubTransaction {
-            memory_context: xact.memory_context,
-            resource_owner: xact.resource_owner,
-            drop: xact.drop,
-            parent: xact.parent.take(),
-        }
+    fn into(mut self) -> SubTransaction<Parent, true> {
+        let result = SubTransaction {
+            memory_context: self.memory_context,
+            resource_owner: self.resource_owner,
+            drop: self.drop,
+            parent: self.parent.take(),
+        };
+        // Make sure original sub-transaction won't roll back
+        self.drop = false;
+        result
     }
 }
 
