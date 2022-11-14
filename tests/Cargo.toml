@@ -17,7 +17,7 @@ pg_test = []
 
 [dependencies]
 pgx = "0.6.0-alpha.0"
-pgx-contrib-spiext = { path = "..", features = ["pub_catch_error"] }
+pgx-contrib-spiext = { path = ".." }
 
 [dev-dependencies]
 pgx-tests = "0.6.0-alpha.0"

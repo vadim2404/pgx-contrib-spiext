@@ -1,24 +1,28 @@
 use pgx::{pg_sys, PgMemoryContexts, SpiClient};
 use std::fmt::{Debug, Formatter};
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
 /// Sub-transaction
 ///
-/// Unless rolled back or committed explicitly, it'll commit when it's dropped.
-pub struct SubTransaction<Parent> {
-    pub(crate) memory_context: pg_sys::MemoryContext,
-    pub(crate) resource_owner: pg_sys::ResourceOwner,
-    pub(crate) drop: bool,
-    pub(crate) parent: Option<Parent>,
+/// Unless rolled back or committed explicitly, it'll commit if `COMMIT` generic parameter is `true`
+/// (default) or roll back if it is `false`.
+pub struct SubTransaction<Parent, const COMMIT: bool = true> {
+    memory_context: pg_sys::MemoryContext,
+    resource_owner: pg_sys::ResourceOwner,
+    // Should the the transaction be dropped, or was it already
+    // committed or rolled back? True if it should be dropped.
+    drop: bool,
+    parent: Option<Parent>,
 }
 
-impl<Parent> Debug for SubTransaction<Parent> {
+impl<Parent, const COMMIT: bool> Debug for SubTransaction<Parent, COMMIT> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(std::any::type_name::<Self>())
     }
 }
 
-impl<Parent> SubTransaction<Parent> {
+impl<Parent, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
     /// Create a new sub-transaction.
     ///
     /// Can be only used by this crate.
@@ -50,11 +54,7 @@ impl<Parent> SubTransaction<Parent> {
 
     /// Rollback the transaction, returning its parent
     pub fn rollback(mut self) -> Parent {
-        unsafe {
-            pg_sys::RollbackAndReleaseCurrentSubTransaction();
-            pg_sys::CurrentResourceOwner = self.resource_owner;
-        }
-        PgMemoryContexts::For(self.memory_context).set_as_current();
+        self.internal_rollback();
         self.drop = false;
         self.parent.take().unwrap()
     }
@@ -62,6 +62,14 @@ impl<Parent> SubTransaction<Parent> {
     /// Returns the memory context this transaction is in
     pub fn memory_context(&self) -> PgMemoryContexts {
         PgMemoryContexts::For(self.memory_context)
+    }
+
+    fn internal_rollback(&self) {
+        unsafe {
+            pg_sys::RollbackAndReleaseCurrentSubTransaction();
+            pg_sys::CurrentResourceOwner = self.resource_owner;
+        }
+        PgMemoryContexts::For(self.memory_context).set_as_current();
     }
 
     fn internal_commit(&self) {
@@ -73,16 +81,59 @@ impl<Parent> SubTransaction<Parent> {
     }
 }
 
-impl<Parent> Drop for SubTransaction<Parent> {
-    fn drop(&mut self) {
-        // If we still need to commit, commit:
-        if self.drop {
-            self.internal_commit();
+impl<Parent> SubTransaction<Parent, true> {
+    /// Make this sub-transaction roll back on drop
+    pub fn rollback_on_drop(self) -> SubTransaction<Parent, false> {
+        self.into()
+    }
+}
+
+impl<Parent> SubTransaction<Parent, false> {
+    /// Make this sub-transaction commit on drop
+    pub fn commit_on_drop(self) -> SubTransaction<Parent, true> {
+        self.into()
+    }
+}
+
+impl<Parent> Into<SubTransaction<Parent, false>> for SubTransaction<Parent, true> {
+    fn into(self) -> SubTransaction<Parent, false> {
+        // Don't drop the original sub-xact
+        let mut xact = ManuallyDrop::new(self);
+        SubTransaction {
+            memory_context: xact.memory_context,
+            resource_owner: xact.resource_owner,
+            drop: xact.drop,
+            parent: xact.parent.take(),
         }
     }
 }
 
-impl<Parent> Deref for SubTransaction<Parent> {
+impl<Parent> Into<SubTransaction<Parent, true>> for SubTransaction<Parent, false> {
+    fn into(self) -> SubTransaction<Parent, true> {
+        // Don't drop the original sub-xact
+        let mut xact = ManuallyDrop::new(self);
+        SubTransaction {
+            memory_context: xact.memory_context,
+            resource_owner: xact.resource_owner,
+            drop: xact.drop,
+            parent: xact.parent.take(),
+        }
+    }
+}
+
+impl<Parent, const COMMIT: bool> Drop for SubTransaction<Parent, COMMIT> {
+    fn drop(&mut self) {
+        if self.drop {
+            if COMMIT {
+                self.internal_commit();
+            } else {
+                self.internal_rollback();
+            }
+        }
+    }
+}
+
+impl<Parent, const COMMIT: bool> Deref for SubTransaction<Parent, COMMIT> {
     type Target = Parent;
 
     fn deref(&self) -> &Self::Target {
@@ -90,7 +141,7 @@ impl<Parent> Deref for SubTransaction<Parent> {
     }
 }
 
-impl<Parent> DerefMut for SubTransaction<Parent> {
+impl<Parent, const COMMIT: bool> DerefMut for SubTransaction<Parent, COMMIT> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.parent.as_mut().unwrap()
     }
