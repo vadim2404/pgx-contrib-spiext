@@ -16,11 +16,11 @@ pg15 = ["pgx/pg15", "pgx-tests/pg15", "pgx-contrib-spiext/pg15"]
 pg_test = []
 
 [dependencies]
-pgx = "0.6.0-alpha.0"
+pgx = { version = "0.6.0-alpha.0", git = "https://github.com/tcdi/pgx", rev = "3dc973a" }
 pgx-contrib-spiext = { path = ".." }
 
 [dev-dependencies]
-pgx-tests = "0.6.0-alpha.0"
+pgx-tests = { version = "0.6.0-alpha.0", git = "https://github.com/tcdi/pgx", rev = "3dc973a" }
 
 [profile.dev]
 panic = "unwind"
