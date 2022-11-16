@@ -148,28 +148,6 @@ impl<Parent, const COMMIT: bool> DerefMut for SubTransaction<Parent, COMMIT> {
     }
 }
 
-/// An internal `SpiClient` wrapper for typing purposes
-pub struct SpiClientWrapper(SpiClient);
-
-impl SpiClientWrapper {
-    pub(crate) fn into_inner(self) -> SpiClient {
-        self.0
-    }
-}
-
-impl Deref for SpiClientWrapper {
-    type Target = SpiClient;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for SpiClientWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 /// Trait that allows creating a sub_transaction off any type
 pub trait SubTransactionExt {
     /// Parent's type
@@ -182,12 +160,12 @@ pub trait SubTransactionExt {
 }
 
 impl SubTransactionExt for SpiClient {
-    type T = SpiClientWrapper;
+    type T = Box<SpiClient>;
     fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
     where
         Self: Sized,
     {
-        let sub_xact = SubTransaction::new(SpiClientWrapper(self));
+        let sub_xact = SubTransaction::new(Box::new(self));
         f(sub_xact)
     }
 }

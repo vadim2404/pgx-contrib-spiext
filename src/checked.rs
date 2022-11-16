@@ -110,7 +110,7 @@ impl CheckedCommands for SpiClient {
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
         self.sub_transaction(|xact| xact.checked_select(query, limit, args))
-            .map(|(table, xact)| (table, xact.commit().into_inner()))
+            .map(|(table, xact)| (table, *xact.commit()))
     }
 }
 
@@ -141,7 +141,7 @@ impl CheckedMutCommands for SpiClient {
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
         self.sub_transaction(|xact| xact.checked_update(query, limit, args))
-            .map(|(table, xact)| (table, xact.commit().into_inner()))
+            .map(|(table, xact)| (table, *xact.commit()))
     }
 }
 
