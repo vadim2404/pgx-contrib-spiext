@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 ///
 /// Unless rolled back or committed explicitly, it'll commit if `COMMIT` generic parameter is `true`
 /// (default) or roll back if it is `false`.
-pub struct SubTransaction<Parent, const COMMIT: bool = true> {
+pub struct SubTransaction<Parent: SubTransactionExt, const COMMIT: bool = true> {
     memory_context: pg_sys::MemoryContext,
     resource_owner: pg_sys::ResourceOwner,
     // Should the transaction be released, or was it already committed or rolled back?
@@ -18,13 +18,13 @@ pub struct SubTransaction<Parent, const COMMIT: bool = true> {
     parent: Option<Parent>,
 }
 
-impl<Parent, const COMMIT: bool> Debug for SubTransaction<Parent, COMMIT> {
+impl<Parent: SubTransactionExt, const COMMIT: bool> Debug for SubTransaction<Parent, COMMIT> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(std::any::type_name::<Self>())
     }
 }
 
-impl<Parent, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
+impl<Parent: SubTransactionExt, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
     /// Create a new sub-transaction.
     ///
     /// Can be only used by this crate.
@@ -83,21 +83,23 @@ impl<Parent, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
     }
 }
 
-impl<Parent> SubTransaction<Parent, true> {
+impl<Parent: SubTransactionExt> SubTransaction<Parent, true> {
     /// Make this sub-transaction roll back on drop
     pub fn rollback_on_drop(self) -> SubTransaction<Parent, false> {
         self.into()
     }
 }
 
-impl<Parent> SubTransaction<Parent, false> {
+impl<Parent: SubTransactionExt> SubTransaction<Parent, false> {
     /// Make this sub-transaction commit on drop
     pub fn commit_on_drop(self) -> SubTransaction<Parent, true> {
         self.into()
     }
 }
 
-impl<Parent> Into<SubTransaction<Parent, false>> for SubTransaction<Parent, true> {
+impl<Parent: SubTransactionExt> Into<SubTransaction<Parent, false>>
+    for SubTransaction<Parent, true>
+{
     fn into(mut self) -> SubTransaction<Parent, false> {
         let result = SubTransaction {
             memory_context: self.memory_context,
@@ -111,7 +113,9 @@ impl<Parent> Into<SubTransaction<Parent, false>> for SubTransaction<Parent, true
     }
 }
 
-impl<Parent> Into<SubTransaction<Parent, true>> for SubTransaction<Parent, false> {
+impl<Parent: SubTransactionExt> Into<SubTransaction<Parent, true>>
+    for SubTransaction<Parent, false>
+{
     fn into(mut self) -> SubTransaction<Parent, true> {
         let result = SubTransaction {
             memory_context: self.memory_context,
@@ -125,7 +129,7 @@ impl<Parent> Into<SubTransaction<Parent, true>> for SubTransaction<Parent, false
     }
 }
 
-impl<Parent, const COMMIT: bool> Drop for SubTransaction<Parent, COMMIT> {
+impl<Parent: SubTransactionExt, const COMMIT: bool> Drop for SubTransaction<Parent, COMMIT> {
     fn drop(&mut self) {
         if self.should_release {
             if COMMIT {
@@ -137,7 +141,7 @@ impl<Parent, const COMMIT: bool> Drop for SubTransaction<Parent, COMMIT> {
     }
 }
 
-impl<Parent, const COMMIT: bool> Deref for SubTransaction<Parent, COMMIT> {
+impl<Parent: SubTransactionExt, const COMMIT: bool> Deref for SubTransaction<Parent, COMMIT> {
     type Target = Parent;
 
     fn deref(&self) -> &Self::Target {
@@ -145,7 +149,7 @@ impl<Parent, const COMMIT: bool> Deref for SubTransaction<Parent, COMMIT> {
     }
 }
 
-impl<Parent, const COMMIT: bool> DerefMut for SubTransaction<Parent, COMMIT> {
+impl<Parent: SubTransactionExt, const COMMIT: bool> DerefMut for SubTransaction<Parent, COMMIT> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.parent.as_mut().unwrap()
     }
@@ -154,7 +158,7 @@ impl<Parent, const COMMIT: bool> DerefMut for SubTransaction<Parent, COMMIT> {
 /// Trait that allows creating a sub_transaction off any type
 pub trait SubTransactionExt {
     /// Parent's type
-    type T;
+    type T: SubTransactionExt;
 
     /// Consume `self` and return a sub-transaction
     fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
@@ -173,7 +177,18 @@ impl<'a> SubTransactionExt for SpiClient<'a> {
     }
 }
 
-impl<Parent> SubTransactionExt for SubTransaction<Parent> {
+impl<'a> SubTransactionExt for Box<SpiClient<'a>> {
+    type T = Box<SpiClient<'a>>;
+    fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
+    where
+        Self: Sized,
+    {
+        let sub_xact = SubTransaction::new(self);
+        f(sub_xact)
+    }
+}
+
+impl<Parent: SubTransactionExt> SubTransactionExt for SubTransaction<Parent> {
     type T = SubTransaction<Parent>;
     fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
     where
@@ -192,13 +207,21 @@ impl<'a: 'b, 'b> From<&'b SpiClient<'a>> for SpiClientHolder<'a, 'b> {
     }
 }
 
+impl<'a: 'b, 'b> Deref for SpiClientHolder<'a, 'b> {
+    type Target = SpiClient<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<'a: 'b, 'b> SubTransactionExt for SpiClientHolder<'a, 'b> {
-    type T = &'b SpiClient<'a>;
+    type T = SpiClientHolder<'a, 'b>;
     fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
     where
         Self: Sized,
     {
-        let sub_xact = SubTransaction::new(self.0);
+        let sub_xact = SubTransaction::new(self);
         f(sub_xact)
     }
 }

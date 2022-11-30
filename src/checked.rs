@@ -27,8 +27,10 @@ pub trait CheckedCommands {
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError>;
 }
 
-impl<'a, Parent: Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe> CheckedCommands
-    for SubTransaction<Parent, false>
+impl<
+        'a,
+        Parent: SubTransactionExt + Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe,
+    > CheckedCommands for SubTransaction<Parent, false>
 {
     type Result<A> = (A, SubTransaction<Parent, false>);
 
@@ -55,8 +57,10 @@ impl<'a, Parent: Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe> Che
     }
 }
 
-impl<'a, Parent: Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe> CheckedCommands
-    for SubTransaction<Parent, true>
+impl<
+        'a,
+        Parent: SubTransactionExt + Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe,
+    > CheckedCommands for SubTransaction<Parent, true>
 {
     type Result<A> = (A, SubTransaction<Parent, true>);
 
