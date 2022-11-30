@@ -159,8 +159,8 @@ pub trait SubTransactionExt {
         Self: Sized;
 }
 
-impl SubTransactionExt for SpiClient {
-    type T = Box<SpiClient>;
+impl<'a> SubTransactionExt for SpiClient<'a> {
+    type T = Box<SpiClient<'a>>;
     fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
     where
         Self: Sized,
@@ -177,6 +177,25 @@ impl<Parent> SubTransactionExt for SubTransaction<Parent> {
         Self: Sized,
     {
         let sub_xact = SubTransaction::new(self);
+        f(sub_xact)
+    }
+}
+
+pub(crate) struct SpiClientHolder<'a: 'b, 'b>(&'b SpiClient<'a>);
+
+impl<'a: 'b, 'b> From<&'b SpiClient<'a>> for SpiClientHolder<'a, 'b> {
+    fn from(client: &'b SpiClient<'a>) -> Self {
+        Self(client)
+    }
+}
+
+impl<'a: 'b, 'b> SubTransactionExt for SpiClientHolder<'a, 'b> {
+    type T = &'b SpiClient<'a>;
+    fn sub_transaction<F: FnOnce(SubTransaction<Self::T>) -> R, R>(self, f: F) -> R
+    where
+        Self: Sized,
+    {
+        let sub_xact = SubTransaction::new(self.0);
         f(sub_xact)
     }
 }

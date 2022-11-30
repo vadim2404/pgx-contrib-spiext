@@ -1,12 +1,12 @@
 use pgx::pg_sys::panic::CaughtError;
 use pgx::PgTryBuilder;
 use pgx::{pg_sys::Datum, PgOid, SpiClient, SpiTupleTable};
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use crate::subtxn::*;
 
-/// Read-only commands for SPI interface
+/// Commands for SPI interface
 pub trait CheckedCommands {
     type Result<A>;
 
@@ -17,11 +17,6 @@ pub trait CheckedCommands {
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError>;
-}
-
-/// Mutable commands for SPI interface
-pub trait CheckedMutCommands {
-    type Result<A>;
 
     /// Execute a mutable command, returning an error if one occurred.
     fn checked_update(
@@ -32,7 +27,7 @@ pub trait CheckedMutCommands {
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError>;
 }
 
-impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedCommands
+impl<'a, Parent: Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe> CheckedCommands
     for SubTransaction<Parent, false>
 {
     type Result<A> = (A, SubTransaction<Parent, false>);
@@ -47,9 +42,20 @@ impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedComm
             .catch_others(|e| Err(e))
             .execute()
     }
+
+    fn checked_update(
+        self,
+        query: &str,
+        limit: Option<i64>,
+        args: Option<Vec<(PgOid, Option<Datum>)>>,
+    ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
+        PgTryBuilder::new(move || Ok((self.update(query, limit, args), self)))
+            .catch_others(|e| Err(e))
+            .execute()
+    }
 }
 
-impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedCommands
+impl<'a, Parent: Deref<Target = SpiClient<'a>> + UnwindSafe + RefUnwindSafe> CheckedCommands
     for SubTransaction<Parent, true>
 {
     type Result<A> = (A, SubTransaction<Parent, true>);
@@ -64,29 +70,6 @@ impl<Parent: Deref<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedComm
             .checked_select(query, limit, args)
             .map(|(res, xact)| (res, xact.commit_on_drop()))
     }
-}
-
-impl<Parent: DerefMut<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedMutCommands
-    for SubTransaction<Parent, false>
-{
-    type Result<A> = (A, SubTransaction<Parent, false>);
-
-    fn checked_update(
-        mut self,
-        query: &str,
-        limit: Option<i64>,
-        args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
-        PgTryBuilder::new(move || Ok((self.update(query, limit, args), self)))
-            .catch_others(|e| Err(e))
-            .execute()
-    }
-}
-
-impl<Parent: DerefMut<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedMutCommands
-    for SubTransaction<Parent, true>
-{
-    type Result<A> = (A, SubTransaction<Parent, true>);
 
     fn checked_update(
         self,
@@ -100,7 +83,7 @@ impl<Parent: DerefMut<Target = SpiClient> + UnwindSafe + RefUnwindSafe> CheckedM
     }
 }
 
-impl CheckedCommands for SpiClient {
+impl<'a> CheckedCommands for SpiClient<'a> {
     type Result<A> = (A, Self);
 
     fn checked_select(
@@ -112,27 +95,6 @@ impl CheckedCommands for SpiClient {
         self.sub_transaction(|xact| xact.checked_select(query, limit, args))
             .map(|(table, xact)| (table, *xact.commit()))
     }
-}
-
-impl<'a> CheckedCommands for &'a SpiClient {
-    type Result<A> = A;
-
-    fn checked_select(
-        self,
-        query: &str,
-        limit: Option<i64>,
-        args: Option<Vec<(PgOid, Option<Datum>)>>,
-    ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
-        // Here we rely on the fact that `SpiClient` can be created at any time. This may not hold true in the future
-        // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
-        SpiClient
-            .sub_transaction(|xact| xact.checked_select(query, limit, args))
-            .map(|(table, _xact): (_, SubTransaction<_, true>)| table)
-    }
-}
-
-impl CheckedMutCommands for SpiClient {
-    type Result<A> = (A, Self);
 
     fn checked_update(
         self,
@@ -145,8 +107,20 @@ impl CheckedMutCommands for SpiClient {
     }
 }
 
-impl<'a> CheckedMutCommands for &'a mut SpiClient {
+impl<'a, 'b: 'a> CheckedCommands for &'a SpiClient<'b> {
     type Result<A> = A;
+
+    fn checked_select(
+        self,
+        query: &str,
+        limit: Option<i64>,
+        args: Option<Vec<(PgOid, Option<Datum>)>>,
+    ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
+        let client: SpiClientHolder = self.into();
+        client
+            .sub_transaction(|xact| xact.checked_select(query, limit, args))
+            .map(|(table, _xact): (_, SubTransaction<_, true>)| table)
+    }
 
     fn checked_update(
         self,
@@ -154,9 +128,8 @@ impl<'a> CheckedMutCommands for &'a mut SpiClient {
         limit: Option<i64>,
         args: Option<Vec<(PgOid, Option<Datum>)>>,
     ) -> Result<Self::Result<SpiTupleTable>, CaughtError> {
-        // Here we rely on the fact that `SpiClient` can be created at any time. This may not hold true in the future
-        // However, we need the client to be consumed by `sub_transaction`, so we do this for now.
-        SpiClient
+        let client: SpiClientHolder = self.into();
+        client
             .sub_transaction(|xact| xact.checked_update(query, limit, args))
             .map(|(table, _xact): (_, SubTransaction<_, true>)| table)
     }

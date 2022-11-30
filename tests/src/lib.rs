@@ -7,15 +7,14 @@ pgx::pg_module_magic!();
 mod tests {
     use pgx::pg_sys::submodules::panic::CaughtError;
     use pgx::prelude::*;
-    use pgx::SpiClient;
     use pgx_contrib_spiext::*;
 
     #[pg_test]
     fn test_sub_txn() {
         use subtxn::*;
-        Spi::execute(|mut c| {
+        Spi::execute(|c| {
             c.update("CREATE TABLE a (v INTEGER)", None, None);
-            let c = c.sub_transaction(|mut xact| {
+            let c = c.sub_transaction(|xact| {
                 xact.update("INSERT INTO a VALUES (0)", None, None);
                 assert_eq!(
                     0,
@@ -24,7 +23,7 @@ mod tests {
                         .get_datum::<i32>(1)
                         .unwrap()
                 );
-                let xact = xact.sub_transaction(|mut xact| {
+                let xact = xact.sub_transaction(|xact| {
                     xact.update("INSERT INTO a VALUES (1)", None, None);
                     assert_eq!(
                         2,
@@ -51,36 +50,36 @@ mod tests {
     fn test_subtxn_checked_execution_smoketest() {
         use checked::*;
         use subtxn::*;
-        Spi::execute(|mut c| {
+        Spi::execute(|c| {
             c.update("CREATE TABLE a (v INTEGER)", None, None);
             let (_, c) = c
                 .sub_transaction(|xact| xact.checked_update("INSERT INTO a VALUES (0)", None, None))
                 .unwrap();
             drop(c);
-            // The above transaction will be committed
+            // The above transaction will be committed, we check that by obtaining a new connection
+            // and querying the results
 
-            // We use SpiClient here because `c` was consumed. It's not the best way to
-            // handle this, but we needed to simulate dropping the sub-transaction
-            assert_eq!(
-                1,
-                SpiClient
-                    .select("SELECT COUNT(*) FROM a", Some(1), None)
-                    .first()
-                    .get_datum::<i32>(1)
-                    .unwrap()
-            );
-            let c = SpiClient.sub_transaction(|mut xact| {
-                xact.update("INSERT INTO a VALUES (0)", None, None);
-                xact.rollback()
+            Spi::execute(|c| {
+                assert_eq!(
+                    1,
+                    c.select("SELECT COUNT(*) FROM a", Some(1), None)
+                        .first()
+                        .get_datum::<i32>(1)
+                        .unwrap()
+                );
+                let c = c.sub_transaction(|xact| {
+                    xact.update("INSERT INTO a VALUES (0)", None, None);
+                    xact.rollback()
+                });
+                // The above transaction will be rolled back (as explicitly requested)
+                assert_eq!(
+                    1,
+                    c.select("SELECT COUNT(*) FROM a", Some(1), None)
+                        .first()
+                        .get_datum::<i32>(1)
+                        .unwrap()
+                );
             });
-            // The above transaction will be rolled back (as explicitly requested)
-            assert_eq!(
-                1,
-                c.select("SELECT COUNT(*) FROM a", Some(1), None)
-                    .first()
-                    .get_datum::<i32>(1)
-                    .unwrap()
-            );
         });
     }
 
@@ -101,9 +100,9 @@ mod tests {
     #[pg_test]
     fn test_catch_checked_update() {
         use checked::*;
-        Spi::execute(|mut c| {
+        Spi::execute(|c| {
             let txid = unsafe { pg_sys::GetCurrentSubTransactionId() };
-            let _ = (&mut c)
+            let _ = (&c)
                 .checked_update("CREATE TABLE x ()", None, None)
                 .unwrap();
             // Ensure we're no longer in the a sub-transaction created by `checked_update`
