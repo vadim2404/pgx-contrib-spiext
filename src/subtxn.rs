@@ -9,9 +9,12 @@ use std::ops::{Deref, DerefMut};
 pub struct SubTransaction<Parent, const COMMIT: bool = true> {
     memory_context: pg_sys::MemoryContext,
     resource_owner: pg_sys::ResourceOwner,
-    // Should the the transaction be dropped, or was it already
-    // committed or rolled back? True if it should be dropped.
-    drop: bool,
+    // Should the transaction be released, or was it already committed or rolled back?
+    //
+    // The reason we are not calling this `released` as we're also using this flag when
+    // we convert between commit_on_drop and rollback_on_drop to ensure it doesn't get released
+    // on the drop of the original value.
+    should_release: bool,
     parent: Option<Parent>,
 }
 
@@ -38,7 +41,7 @@ impl<Parent, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
         PgMemoryContexts::For(ctx).set_as_current();
         Self {
             memory_context: ctx,
-            drop: true,
+            should_release: true,
             resource_owner,
             parent: Some(parent),
         }
@@ -47,14 +50,14 @@ impl<Parent, const COMMIT: bool> SubTransaction<Parent, COMMIT> {
     /// Commit the transaction, returning its parent
     pub fn commit(mut self) -> Parent {
         self.internal_commit();
-        self.drop = false;
+        self.should_release = false;
         self.parent.take().unwrap()
     }
 
     /// Rollback the transaction, returning its parent
     pub fn rollback(mut self) -> Parent {
         self.internal_rollback();
-        self.drop = false;
+        self.should_release = false;
         self.parent.take().unwrap()
     }
 
@@ -99,11 +102,11 @@ impl<Parent> Into<SubTransaction<Parent, false>> for SubTransaction<Parent, true
         let result = SubTransaction {
             memory_context: self.memory_context,
             resource_owner: self.resource_owner,
-            drop: self.drop,
+            should_release: self.should_release,
             parent: self.parent.take(),
         };
         // Make sure original sub-transaction won't commit
-        self.drop = false;
+        self.should_release = false;
         result
     }
 }
@@ -113,18 +116,18 @@ impl<Parent> Into<SubTransaction<Parent, true>> for SubTransaction<Parent, false
         let result = SubTransaction {
             memory_context: self.memory_context,
             resource_owner: self.resource_owner,
-            drop: self.drop,
+            should_release: self.should_release,
             parent: self.parent.take(),
         };
         // Make sure original sub-transaction won't roll back
-        self.drop = false;
+        self.should_release = false;
         result
     }
 }
 
 impl<Parent, const COMMIT: bool> Drop for SubTransaction<Parent, COMMIT> {
     fn drop(&mut self) {
-        if self.drop {
+        if self.should_release {
             if COMMIT {
                 self.internal_commit();
             } else {
