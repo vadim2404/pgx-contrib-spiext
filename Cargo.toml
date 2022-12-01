@@ -10,10 +10,7 @@ msrv = "1.65"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pgx = ">=0.6.0-alpha.1"
-
-[patch.crates-io]
-pgx = { git = "https://github.com/tcdi/pgx", rev = "c59ccc5" }
+pgx = "0.6.0"
 
 [features]
 default = []

@@ -16,15 +16,11 @@ pg15 = ["pgx/pg15", "pgx-tests/pg15", "pgx-contrib-spiext/pg15"]
 pg_test = []
 
 [dependencies]
-pgx = ">=0.6.0-alpha.1"
+pgx = "0.6.0"
 pgx-contrib-spiext = { path = ".." }
 
 [dev-dependencies]
-pgx-tests = ">=0.6.0-alpha.1"
-
-[patch.crates-io]
-pgx = { git = "https://github.com/tcdi/pgx", rev = "c59ccc5" }
-pgx-tests = { git = "https://github.com/tcdi/pgx", rev = "c59ccc5" }
+pgx-tests = "0.6.0"
 
 [profile.dev]
 panic = "unwind"
