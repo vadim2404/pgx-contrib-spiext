@@ -10,6 +10,15 @@ mod tests {
     use pgx_contrib_spiext::*;
 
     #[pg_test]
+    fn test_sub_txn_1() {
+        use subtxn::*;
+        Spi::execute(|c| {
+            c.update("CREATE TABLE a (v INTEGER)", None, None);
+            c.sub_transaction(|xact| xact);
+        });
+    }
+
+    #[pg_test]
     fn test_sub_txn() {
         use subtxn::*;
         Spi::execute(|c| {
